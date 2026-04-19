@@ -4,7 +4,7 @@ import API_BASE_URL from '../../config/api';
 // Helper function to get token from localStorage
 const getToken = () => localStorage.getItem('accessToken');
 
-// Login thunk
+// Login thunk - UPDATED with better error handling
 export const login = createAsyncThunk(
   'auth/login',
   async (credentials, { rejectWithValue }) => {
@@ -20,7 +20,20 @@ export const login = createAsyncThunk(
         }),
       });
 
-      const data = await response.json();
+      // Check if response is empty
+      const text = await response.text();
+      if (!text) {
+        return rejectWithValue('Server returned empty response');
+      }
+
+      // Parse JSON
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error('JSON parse error:', e);
+        return rejectWithValue('Invalid response from server');
+      }
 
       if (!response.ok) {
         // Handle express-validator errors
@@ -31,6 +44,11 @@ export const login = createAsyncThunk(
         return rejectWithValue(data.error || 'Login failed');
       }
 
+      // Validate response data
+      if (!data.accessToken || !data.user) {
+        return rejectWithValue('Invalid response format from server');
+      }
+
       // Store tokens
       localStorage.setItem('accessToken', data.accessToken);
       localStorage.setItem('refreshToken', data.refreshToken);
@@ -38,7 +56,8 @@ export const login = createAsyncThunk(
 
       return data;
     } catch (error) {
-      return rejectWithValue(error.message || 'Network error');
+      console.error('Login network error:', error);
+      return rejectWithValue(error.message || 'Network error - Cannot connect to server');
     }
   }
 );
@@ -86,7 +105,17 @@ export const refreshToken = createAsyncThunk(
         body: JSON.stringify({ refreshToken }),
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      if (!text) {
+        return rejectWithValue('Server returned empty response');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        return rejectWithValue('Invalid response from server');
+      }
 
       if (!response.ok) {
         return rejectWithValue(data.error || 'Token refresh failed');
@@ -108,10 +137,14 @@ export const checkAuth = createAsyncThunk(
     const user = localStorage.getItem('user');
     
     if (token && user) {
-      return {
-        accessToken: token,
-        user: JSON.parse(user)
-      };
+      try {
+        return {
+          accessToken: token,
+          user: JSON.parse(user)
+        };
+      } catch (e) {
+        return rejectWithValue('Invalid user data');
+      }
     }
     return rejectWithValue('Not authenticated');
   }
